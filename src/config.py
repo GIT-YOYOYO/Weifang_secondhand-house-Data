@@ -17,8 +17,9 @@ DATA_DIR = BASE_DIR / "data"
 OUTPUT_DIR = BASE_DIR / "output"
 FIGURE_DIR = OUTPUT_DIR / "figures"   # 独立图表 HTML
 TABLE_DIR = OUTPUT_DIR / "tables"     # 分析结果 CSV
+REPORT_ASSET_DIR = OUTPUT_DIR / "report_assets"  # 报告静态插图（Matplotlib）
 
-for _dir in (DATA_DIR, OUTPUT_DIR, FIGURE_DIR, TABLE_DIR):
+for _dir in (DATA_DIR, OUTPUT_DIR, FIGURE_DIR, TABLE_DIR, REPORT_ASSET_DIR):
     _dir.mkdir(parents=True, exist_ok=True)
 
 RAW_DATA_PATH = DATA_DIR / "sh_data.csv"

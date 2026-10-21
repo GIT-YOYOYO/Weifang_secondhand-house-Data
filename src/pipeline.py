@@ -7,8 +7,9 @@
 实现方式：
     先由 data_loader 读取原始 CSV，交给 preprocessing.clean_data 清洗并落盘；
     再依次执行 market/community/factors/modeling 四个分析模块，每个模块
-    返回统一的字典结构（指标卡、图表、结论、数据表）；最后由 report
-    汇总为单文件 HTML 报告，并将每张图另存为独立 HTML。
+    返回统一的字典结构（指标卡、图表、结论、数据表）；随后由 report_charts
+    使用 Matplotlib 生成 Word 报告所需的静态插图；最后由 report 汇总为
+    单文件 HTML 报告，并将每张 Plotly 图另存为独立 HTML。
 """
 
 import time
@@ -17,6 +18,7 @@ from .analysis import community, factors, market, modeling
 from .data_loader import load_raw
 from .preprocessing import clean_data
 from .report import build_report, export_figures
+from .report_charts import generate_report_charts
 
 ANALYSIS_MODULES = [
     ("market", market),
@@ -39,7 +41,7 @@ def run_pipeline(export_figure_files: bool = True) -> str:
         生成的 HTML 报告文件路径。
     """
     started = time.time()
-    total_steps = len(ANALYSIS_MODULES) + 3
+    total_steps = len(ANALYSIS_MODULES) + 4
     step = 0
 
     print("=" * 62)
@@ -65,6 +67,11 @@ def run_pipeline(export_figure_files: bool = True) -> str:
         results[key] = module.analyze(df)
         print(f"        完成 {len(results[key]['figures'])} 张图表、"
               f"{len(results[key]['tables'])} 张数据表")
+
+    step += 1
+    print(f"[{step}/{total_steps}] 生成报告静态图表（Matplotlib）...")
+    chart_paths = generate_report_charts(raw, df)
+    print(f"        已生成 {len(chart_paths)} 张报告插图至 output/report_assets/")
 
     step += 1
     print(f"[{step}/{total_steps}] 生成 HTML 报告与图表文件 ...")

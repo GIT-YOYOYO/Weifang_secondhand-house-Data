@@ -1,6 +1,6 @@
 # 潍坊市二手房样本数据项目
 
-基于潍坊市 18,000+ 条二手房挂牌样本的数据清洗、市场分析与价格建模项目，最终输出交互式 HTML 分析报告。
+基于潍坊市 18,000+ 条二手房挂牌样本的数据清洗、市场分析与价格建模项目，输出交互式 HTML 分析报告，并使用 Matplotlib 生成 Word 报告所需的静态插图。
 
 ## 功能模块
 
@@ -11,6 +11,7 @@
 | 小区维度 | 小区价格排行、供应规模、相对区县折价率、规模与单价分布 |
 | 价格影响因素 | 装修/电梯/楼层/建筑类型/朝向分组对比、Kruskal-Wallis 显著性检验、面积相关性 |
 | 建模与应用 | 随机森林与岭回归价格预测、特征重要性、残差分析、潜在低价房源识别 |
+| 报告静态图表 | 使用 Matplotlib 生成数据质量报告与数据分析报告的 12 张 JPG 插图 |
 
 ## 项目目录
 
@@ -24,6 +25,7 @@
 │   ├── data_loader.py       # 数据读取
 │   ├── preprocessing.py     # 数据清洗与特征构造
 │   ├── charts.py            # Plotly 图表统一样式
+│   ├── report_charts.py     # Matplotlib 报告插图生成
 │   ├── report.py            # HTML 报告生成
 │   ├── pipeline.py          # 分析流水线编排
 │   └── analysis/
@@ -34,6 +36,7 @@
 ├── output/
 │   ├── 潍坊市二手房市场分析报告.html  # 交互式分析报告
 │   ├── figures/             # 独立图表 HTML（中文文件名）
+│   ├── report_assets/       # 报告静态插图 JPG（Matplotlib）
 │   └── tables/              # 分析结果 CSV
 ├── main.py                  # 项目入口
 ├── requirements.txt         # 依赖清单
@@ -53,6 +56,7 @@ python main.py
 
 - `output/潍坊市二手房市场分析报告.html`：单文件交互式报告（已内嵌 Plotly，可离线打开）
 - `output/figures/*.html`：20 张独立图表，中文命名（如 `市场概况_区县中位单价.html`，Plotly 脚本通过 CDN 加载）
+- `output/report_assets/*.jpg`：12 张报告静态插图（7 张数据质量 + 5 张数据分析，Matplotlib 生成）
 - `output/tables/*.csv`：区县统计、小区排行、因素汇总、模型指标、低价候选等数据表
 - `data/processed_data.csv`：清洗并构造特征后的建模数据
 
