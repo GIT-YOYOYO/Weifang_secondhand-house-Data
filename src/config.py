@@ -14,7 +14,7 @@ for _dir in (DATA_DIR, OUTPUT_DIR, FIGURE_DIR, TABLE_DIR):
 
 RAW_DATA_PATH = DATA_DIR / "sh_data.csv"
 PROCESSED_DATA_PATH = DATA_DIR / "processed_data.csv"
-REPORT_PATH = OUTPUT_DIR / "report.html"
+REPORT_PATH = OUTPUT_DIR / "潍坊市二手房市场分析报告.html"
 
 RANDOM_STATE = 42          # 统一随机种子，保证抽样与建模结果可复现
 TOP_N = 15                 # 排行榜展示条数

@@ -32,8 +32,8 @@
 │       ├── factors.py       # 价格影响因素
 │       └── modeling.py      # 建模与应用
 ├── output/
-│   ├── report.html          # 交互式分析报告
-│   ├── figures/             # 独立图表 HTML
+│   ├── 潍坊市二手房市场分析报告.html  # 交互式分析报告
+│   ├── figures/             # 独立图表 HTML（中文文件名）
 │   └── tables/              # 分析结果 CSV
 ├── main.py                  # 项目入口
 ├── requirements.txt         # 依赖清单
@@ -47,12 +47,12 @@ pip install -r requirements.txt
 python main.py
 ```
 
-运行后用浏览器打开 `output/report.html` 查看完整分析报告。
+运行后用浏览器打开 `output/潍坊市二手房市场分析报告.html` 查看完整分析报告。
 
 ## 输出说明
 
-- `output/report.html`：单文件交互式报告（已内嵌 Plotly，可离线打开）
-- `output/figures/*.html`：20 张独立图表（Plotly 脚本通过 CDN 加载）
+- `output/潍坊市二手房市场分析报告.html`：单文件交互式报告（已内嵌 Plotly，可离线打开）
+- `output/figures/*.html`：20 张独立图表，中文命名（如 `市场概况_区县中位单价.html`，Plotly 脚本通过 CDN 加载）
 - `output/tables/*.csv`：区县统计、小区排行、因素汇总、模型指标、低价候选等数据表
 - `data/processed_data.csv`：清洗并构造特征后的建模数据
 

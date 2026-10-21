@@ -15,6 +15,30 @@ SECTION_META = {
     "modeling": ("建模与应用", "训练价格预测模型，评估拟合效果并识别潜在低价房源。"),
 }
 
+# 独立图表文件的英文键 -> 中文文件名
+FIGURE_NAME_MAP = {
+    "market_district_price": "市场概况_区县中位单价",
+    "market_district_count": "市场概况_区县房源数量",
+    "market_price_hist": "市场概况_总价分布",
+    "market_area_bin": "市场概况_面积段分布",
+    "market_decoration": "市场概况_装修构成",
+    "market_layout": "市场概况_主流户型",
+    "community_top_price": "小区维度_单价排行",
+    "community_top_supply": "小区维度_供应排行",
+    "community_scatter": "小区维度_规模与单价",
+    "factors_decoration": "影响因素_装修",
+    "factors_elevator": "影响因素_电梯",
+    "factors_floor": "影响因素_楼层",
+    "factors_building": "影响因素_建筑类型",
+    "factors_impact": "影响因素_溢价对比",
+    "factors_area_scatter": "影响因素_面积与单价",
+    "modeling_model_compare": "建模应用_模型对比",
+    "modeling_pred_scatter": "建模应用_预测效果",
+    "modeling_importance": "建模应用_特征重要性",
+    "modeling_residuals": "建模应用_残差分布",
+    "modeling_district_error": "建模应用_区县误差",
+}
+
 CSS = """
 :root {
   --bg: #f1f5f9;
@@ -320,11 +344,12 @@ def build_report(results: dict, clean_report: dict) -> str:
 
 
 def export_figures(results: dict) -> list[str]:
-    """将每张图表另存为独立 HTML 文件。"""
+    """将每张图表另存为独立 HTML 文件（文件名使用中文）。"""
     paths = []
     for key, result in results.items():
         for name, fig in result["figures"].items():
-            path = FIGURE_DIR / f"{key}_{name}.html"
+            stem = FIGURE_NAME_MAP.get(f"{key}_{name}", f"{key}_{name}")
+            path = FIGURE_DIR / f"{stem}.html"
             fig.write_html(path, include_plotlyjs="cdn", full_html=True)
             paths.append(str(path))
     return paths
