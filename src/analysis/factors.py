@@ -1,8 +1,15 @@
 """价格影响因素分析。
 
-对装修、电梯、楼层、建筑类型、朝向五个维度做分组统计，
-计算各组相对整体中位单价的溢价，并用 Kruskal-Wallis 检验
-判断组间单价差异是否具有统计显著性；同时分析面积与单价的关系。
+功能：
+    量化装修、电梯、楼层、建筑类型、朝向和面积对二手房单价的影响。
+
+实现方式：
+    - _group_summary 对每个维度分组统计中位单价、房源数和相对整体溢价；
+    - 使用 Kruskal-Wallis 检验判断组间单价差异是否显著（样本不足的类别
+      不参与检验）；
+    - _box / _fig_impact 输出箱线图和溢价对比图，_fig_area_scatter 通过
+      抽样散点与线性趋势线展示面积与单价的关系；
+    - analyze 汇总指标、图表、分组统计表和自动生成的文字结论。
 """
 
 import numpy as np
@@ -169,6 +176,7 @@ def analyze(df: pd.DataFrame) -> dict:
     significant = sum(1 for p in p_values.values() if p < 0.05)
 
     def _premium_text(left: str, right: str, stats: pd.Series) -> str:
+        """生成“A 较 B 中位单价高/低 X%”的对比结论文本。"""
         if left not in stats.index or right not in stats.index:
             return "样本不足"
         diff = (stats[left] / stats[right] - 1) * 100

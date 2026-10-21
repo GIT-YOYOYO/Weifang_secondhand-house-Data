@@ -1,11 +1,16 @@
 """数据清洗与特征构造模块。
 
-处理步骤：
-1. 数值字段类型转换与缺失剔除
-2. 重复挂牌去重
-3. 楼层、户型、梯户比、朝向等字段解析
-4. 单价/面积/总价的极端值过滤
-5. 构造分析所需的派生特征并落盘
+功能：
+    将原始挂牌数据整理为可直接分析的建模数据，并记录每一步清洗结果。
+
+实现方式：
+    1. 数值字段强转为数值类型，剔除核心字段缺失的记录；
+    2. 按标题/小区/总价/面积识别同一房源的重复挂牌并去重；
+    3. 用正则表达式从 floor、size、elevatorNum 中解析楼层、户型、梯户比，
+       同时将朝向、装修、电梯等类别字段标准化；
+    4. 对单价、面积、总价按 0.2%～99.8% 分位数过滤极端值；
+    5. 构造面积段、总价段、户型标签等派生字段，输出 processed_data.csv。
+    清洗步骤及行数变化通过 report 字典返回，用于报告的数据概览板块。
 """
 
 import re
@@ -34,7 +39,12 @@ PRICE_LABELS = ["50万以下", "50-80万", "80-120万", "120-200万", "200万以
 
 
 def cn_to_int(text: str):
-    """中文数字转整数，如 十 -> 10、二十二 -> 22。"""
+    """中文数字转整数。
+
+    支持 1～99 的中文数字：不含“十”时按位映射（一 -> 1）；
+    含“十”时拆分为十位和个位（十 -> 10、二十二 -> 22、三十五 -> 35）。
+    空值返回 None，供后续缺失值统计。
+    """
     if text is None or text == "":
         return None
     if text.isdigit():
@@ -48,7 +58,11 @@ def cn_to_int(text: str):
 
 
 def _direction_type(value: str) -> str:
-    """将朝向组合标准化为 南北通透 / 朝南 / 朝北 / 其他。"""
+    """将朝向组合标准化为 南北通透 / 朝南 / 朝北 / 其他。
+
+    同时包含“南”“北”视为南北通透；仅含其中一个时归为对应朝向；
+    其余组合（如东西向）统一归为“其他”。
+    """
     value = str(value)
     has_south = "南" in value
     has_north = "北" in value
@@ -73,7 +87,19 @@ def _filter_quantile(df: pd.DataFrame, column: str, lower: float = 0.002, upper:
 
 
 def clean_data(raw: pd.DataFrame):
-    """执行完整清洗流程，返回 (清洗后数据, 清洗报告)。"""
+    """执行完整清洗流程。
+
+    按模块开头的 1～8 步依次处理，逐步记录每一步删除的行数，
+    最终将结果写入 data/processed_data.csv。
+
+    Args:
+        raw: 原始房源数据。
+
+    Returns:
+        (cleaned, report) 二元组。cleaned 为清洗后的 DataFrame；
+        report 包含 steps（各步骤及数量）、rows（最终行数）、
+        missing（解析字段缺失数）、districts 和 communities。
+    """
     df = raw.copy()
     steps = [("原始记录数", len(df))]
 

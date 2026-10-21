@@ -1,4 +1,16 @@
-"""交互式 HTML 分析报告生成。"""
+"""交互式 HTML 分析报告生成。
+
+功能：
+    把四个分析模块的结果拼接为单文件、可离线打开的 HTML 报告，
+    并支持将每张图表导出为独立 HTML 文件。
+
+实现方式：
+    - 使用 plotly.io.to_html 转换图表，仅第一张图内嵌 plotly.js，
+      后续图表复用该脚本，在离线可用与控制体积之间取得平衡；
+    - 通过字符串模板和 CSS 渲染页头、指标卡、关键发现、图表网格与数据表；
+    - 所有动态文本均经 html.escape 转义，避免 HTML 注入；
+    - export_figures 依据 FIGURE_NAME_MAP 将单图以中文文件名写入 output/figures/。
+"""
 
 import html
 from datetime import datetime
@@ -303,7 +315,18 @@ def _render_overview(clean_report: dict, total_rows: int) -> str:
 
 
 def build_report(results: dict, clean_report: dict) -> str:
-    """将各分析模块结果渲染为单文件 HTML 报告。"""
+    """将各分析模块结果渲染为单文件 HTML 报告。
+
+    依次渲染数据概览和四个分析板块，拼装页头、导航与页脚后写入
+    REPORT_PATH。第一张图表会内嵌 plotly.js，其余图表复用。
+
+    Args:
+        results: {模块键: analyze() 返回值} 的有序字典。
+        clean_report: preprocessing.clean_data 返回的清洗报告。
+
+    Returns:
+        生成的报告文件路径。
+    """
     first = [True]
     sections = [_render_overview(clean_report, clean_report["steps"][0][1] if clean_report["steps"] else clean_report["rows"])]
     for index, (key, result) in enumerate(results.items(), start=1):

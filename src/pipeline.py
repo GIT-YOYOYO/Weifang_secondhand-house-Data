@@ -1,4 +1,15 @@
-"""分析流水线：数据读取 → 清洗 → 四类分析 → 图表与 HTML 报告。"""
+"""分析流水线：数据读取 → 清洗 → 四类分析 → 图表与 HTML 报告。
+
+功能：
+    按固定顺序编排各处理阶段，输出进度日志、清洗摘要和最终报告路径，
+    是 main.py 唯一调用的业务流程入口。
+
+实现方式：
+    先由 data_loader 读取原始 CSV，交给 preprocessing.clean_data 清洗并落盘；
+    再依次执行 market/community/factors/modeling 四个分析模块，每个模块
+    返回统一的字典结构（指标卡、图表、结论、数据表）；最后由 report
+    汇总为单文件 HTML 报告，并将每张图另存为独立 HTML。
+"""
 
 import time
 
@@ -16,7 +27,17 @@ ANALYSIS_MODULES = [
 
 
 def run_pipeline(export_figure_files: bool = True) -> str:
-    """运行完整分析流水线，返回 HTML 报告路径。"""
+    """运行完整分析流水线。
+
+    依次执行读取、清洗、四个分析模块和报告生成，并在控制台打印每一步
+    的进度与结果数量。
+
+    Args:
+        export_figure_files: 是否将每张图表另存为独立 HTML，默认 True。
+
+    Returns:
+        生成的 HTML 报告文件路径。
+    """
     started = time.time()
     total_steps = len(ANALYSIS_MODULES) + 3
     step = 0
