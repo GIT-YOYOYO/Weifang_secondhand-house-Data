@@ -14,8 +14,11 @@ import pandas as pd
 
 from .config import PROCESSED_DATA_PATH
 
+# 楼层格式如“中楼层 (共11层)”，提取楼层位置和总层数
 FLOOR_RE = re.compile(r"(低|中|高)楼层.*?共(\d+)层")
+# 户型格式如“3室2厅1厨1卫”，提取室、厅、厨、卫数量
 SIZE_RE = re.compile(r"(\d+)室(\d+)厅(\d+)厨(\d+)卫")
+# 梯户比格式如“一梯两户”“四梯三十五户”，提取电梯数与每层户数
 LADDER_RE = re.compile(r"([一二两三四五六七八九十]+)梯([一二两三四五六七八九十]+)户")
 
 _CN_DIGITS = {
@@ -59,7 +62,11 @@ def _direction_type(value: str) -> str:
 
 
 def _filter_quantile(df: pd.DataFrame, column: str, lower: float = 0.002, upper: float = 0.998):
-    """按分位数过滤极端值，返回过滤后的数据和删除行数。"""
+    """按分位数过滤极端值，返回过滤后的数据和删除行数。
+
+    默认保留 0.2%～99.8% 区间：既能剔除明显录入错误或异常挂牌，
+    又避免误删高价大平层等真实高端样本。
+    """
     low, high = df[column].quantile([lower, upper])
     mask = df[column].between(low, high)
     return df[mask].copy(), int((~mask).sum())
@@ -104,18 +111,19 @@ def clean_data(raw: pd.DataFrame):
     df["decoration"] = df["decoration"].fillna("其他")
     df["type"] = df["type"].fillna("其他")
 
-    # 7. 极端值过滤
+    # 7. 极端值过滤：分别对单价、面积、总价做分位数裁剪
     for col in ["unit_price", "square", "total_price"]:
         df, removed = _filter_quantile(df, col)
         steps.append((f"{col} 极端值剔除", removed))
 
-    # 8. 派生分组字段
+    # 8. 派生分组字段：面积段、总价段、统一格式的户型标签
     df["area_bin"] = pd.cut(df["square"], bins=AREA_BINS, labels=AREA_LABELS, right=False)
     df["price_bin"] = pd.cut(df["total_price"], bins=PRICE_BINS, labels=PRICE_LABELS, right=False)
     df["layout"] = df["rooms"].astype("Int64").astype(str) + "室" + df["halls"].astype("Int64").astype(str) + "厅"
 
     steps.append(("清洗后记录数", len(df)))
 
+    # 落盘供后续分析复用，使用 utf-8-sig 保证 Excel 打开中文不乱码
     cleaned = df.reset_index(drop=True)
     cleaned.to_csv(PROCESSED_DATA_PATH, index=False, encoding="utf-8-sig")
 

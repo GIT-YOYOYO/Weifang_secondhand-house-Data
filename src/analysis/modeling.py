@@ -1,4 +1,9 @@
-"""价格预测建模与低价房源识别。"""
+"""价格预测建模与低价房源识别。
+
+以房源属性（面积、户型、楼层、区县、装修等）为特征，分别训练
+随机森林和岭回归模型预测单价，比较两种模型的拟合效果；再基于
+最优模型在测试集上的残差，识别挂牌价明显低于预测值的潜在房源。
+"""
 
 import numpy as np
 import pandas as pd
@@ -16,12 +21,15 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from ..charts import apply_theme
 from ..config import RANDOM_STATE, TABLE_DIR
 
+# 数值特征：面积、户型结构、楼层与梯户比、电梯标记
 NUMERIC_FEATURES = [
     "square", "rooms", "halls", "bathrooms", "total_floors",
     "households_per_elevator", "elevator_flag",
 ]
+# 类别特征：需要独热编码后参与建模
 CATEGORICAL_FEATURES = ["district", "type", "decoration", "floor_level", "direction_type"]
 
+# 特征英文名 -> 中文显示名，用于特征重要性图
 FEATURE_LABELS = {
     "square": "建筑面积",
     "rooms": "卧室数",
@@ -37,11 +45,17 @@ FEATURE_LABELS = {
     "direction_type": "朝向",
 }
 
-BARGAIN_THRESHOLD = 30.0
+BARGAIN_THRESHOLD = 30.0  # 挂牌单价低于预测值 30% 以上视为潜在低价候选
 BARGAIN_TOP_N = 15
 
 
 def _build_pipeline(model) -> Pipeline:
+    """构建“预处理 + 模型”的 sklearn 流水线。
+
+    数值特征用中位数填补缺失并标准化；类别特征用众数填补后
+    做独热编码（handle_unknown="ignore" 保证测试集出现新类别时不报错）。
+    每个模型都使用独立的预处理分支，避免拟合状态相互影响。
+    """
     numeric = Pipeline([
         ("imputer", SimpleImputer(strategy="median")),
         ("scaler", StandardScaler()),
@@ -58,6 +72,7 @@ def _build_pipeline(model) -> Pipeline:
 
 
 def _pretty_feature(name: str) -> str:
+    """将 sklearn 输出特征名（如 cat__district_寒亭区）转为中文可读名称。"""
     name = name.split("__", 1)[-1]
     for column, label in FEATURE_LABELS.items():
         if name == column:
@@ -68,6 +83,7 @@ def _pretty_feature(name: str) -> str:
 
 
 def _fig_model_compare(metrics: pd.DataFrame) -> go.Figure:
+    """对比各模型在测试集上的 R² 得分。"""
     fig = px.bar(
         metrics, x="模型", y="R²", text=metrics["R²"].round(3),
         color="模型", color_discrete_sequence=["#2563EB", "#F59E0B"],
@@ -80,6 +96,10 @@ def _fig_model_compare(metrics: pd.DataFrame) -> go.Figure:
 
 
 def _fig_pred_scatter(y_true: np.ndarray, y_pred: np.ndarray, label: str) -> go.Figure:
+    """绘制测试集“实际单价-预测单价”散点图，虚线为理想预测线。
+
+    点越贴近对角线说明预测越准确；最多抽样 3000 个点控制渲染开销。
+    """
     sample_idx = np.random.default_rng(RANDOM_STATE).choice(
         len(y_true), size=min(3000, len(y_true)), replace=False
     )
@@ -98,6 +118,7 @@ def _fig_pred_scatter(y_true: np.ndarray, y_pred: np.ndarray, label: str) -> go.
 
 
 def _fig_importance(importance: pd.DataFrame) -> go.Figure:
+    """绘制随机森林特征重要性 TOP12 条形图。"""
     data = importance.sort_values("重要性")
     fig = px.bar(
         data, x="重要性", y="特征", orientation="h",
@@ -110,6 +131,7 @@ def _fig_importance(importance: pd.DataFrame) -> go.Figure:
 
 
 def _fig_residuals(residuals: np.ndarray) -> go.Figure:
+    """绘制残差（实际 - 预测）分布，中位数偏离 0 说明模型存在系统偏差。"""
     fig = px.histogram(
         x=residuals, nbins=60, color_discrete_sequence=["#10B981"],
         labels={"x": "残差（实际 - 预测，元/㎡）"},
@@ -121,6 +143,7 @@ def _fig_residuals(residuals: np.ndarray) -> go.Figure:
 
 
 def _fig_district_error(test: pd.DataFrame) -> go.Figure:
+    """按区县统计测试集平均绝对误差，识别模型误差较大的区域。"""
     error = (
         test.assign(绝对误差=test["残差"].abs())
         .groupby("district", as_index=False)["绝对误差"].mean()
@@ -139,10 +162,25 @@ def _fig_district_error(test: pd.DataFrame) -> go.Figure:
 
 
 def analyze(df: pd.DataFrame) -> dict:
-    """训练价格预测模型，识别潜在低价房源。"""
+    """训练价格预测模型并识别潜在低价房源。
+
+    流程：
+    1. 划分 80% 训练集 / 20% 测试集，保留测试集原始索引用于回查房源信息；
+    2. 分别训练随机森林和岭回归，用 R²、MAE、RMSE 评估；
+    3. 选择 R² 最高的模型，输出特征重要性、残差和分区域误差；
+    4. 在测试集中筛选“挂牌单价低于预测值 30% 以上”的房源作为低价候选，
+       只使用测试集可避免模型对训练样本过拟合造成的高估。
+
+    Args:
+        df: 清洗后的房源数据。
+
+    Returns:
+        包含指标卡、图表、评估表和低价候选表的字典。
+    """
     features = df[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
     target = df["unit_price"]
 
+    # 同时切分特征、目标与原始索引，便于后续把预测结果映射回房源
     x_train, x_test, y_train, y_test, idx_train, idx_test = train_test_split(
         features, target, df.index,
         test_size=0.2, random_state=RANDOM_STATE,
@@ -155,6 +193,7 @@ def analyze(df: pd.DataFrame) -> dict:
         "岭回归": Ridge(alpha=1.0),
     }
 
+    # 训练每个模型并在同一测试集上评估，保留预测结果与流水线供后续使用
     results = {}
     predictions = {}
     for name, algorithm in algorithms.items():
@@ -193,8 +232,10 @@ def analyze(df: pd.DataFrame) -> dict:
     test = df.loc[idx_test, ["title", "community", "district", "square", "total_price", "unit_price"]].copy()
     test["预测单价"] = best_pred.round(1)
     test["残差"] = test["unit_price"] - test["预测单价"]
+    # 折价率 = 1 - 挂牌价 / 预测价，正值表示挂牌价低于模型估值
     test["折价率"] = (1 - test["unit_price"] / test["预测单价"]) * 100
 
+    # 折价达到阈值的房源作为候选池，再取折价最大的若干条展示
     bargain_pool = test[test["折价率"] >= BARGAIN_THRESHOLD]
     bargain_count = len(bargain_pool)
     bargains = bargain_pool.sort_values("折价率", ascending=False).head(BARGAIN_TOP_N).copy()

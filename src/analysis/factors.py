@@ -1,4 +1,9 @@
-"""价格影响因素分析。"""
+"""价格影响因素分析。
+
+对装修、电梯、楼层、建筑类型、朝向五个维度做分组统计，
+计算各组相对整体中位单价的溢价，并用 Kruskal-Wallis 检验
+判断组间单价差异是否具有统计显著性；同时分析面积与单价的关系。
+"""
 
 import numpy as np
 import pandas as pd
@@ -23,18 +28,25 @@ TYPE_ORDER = ["板楼", "板塔结合", "塔楼"]
 
 
 def _prepare(df: pd.DataFrame) -> pd.DataFrame:
+    """将 0/1 电梯标记转换为可读类别，便于分组与图表展示。"""
     data = df.copy()
     data["elevator_label"] = data["elevator_flag"].map({1: "有电梯", 0: "无电梯"})
     return data
 
 
 def _group_summary(data: pd.DataFrame, column: str, min_samples: int = 30) -> tuple[pd.DataFrame, float]:
-    """计算某因素各类别的价格统计与 Kruskal-Wallis 检验 p 值。"""
+    """计算某因素各类别的价格统计与 Kruskal-Wallis 检验 p 值。
+
+    溢价以该因素所有房源的单价中位数为基准，避免不同因素之间
+    因样本结构不同而无法横向比较。样本量不足 min_samples 的类别
+    不参与显著性检验，防止小样本噪声影响结论。
+    """
     overall = data["unit_price"].median()
     stats = (
         data.groupby(column, as_index=False)
         .agg(房源数=("id", "size"), 中位单价=("unit_price", "median"), 中位总价=("total_price", "median"))
     )
+    # 相对整体中位数的溢价百分比，正值表示高于整体水平
     stats["相对整体溢价"] = (stats["中位单价"] / overall - 1) * 100
     groups = [g["unit_price"].to_numpy() for _, g in data.groupby(column) if len(g) >= min_samples]
     p_value = kruskal(*groups).pvalue if len(groups) >= 2 else np.nan
@@ -42,6 +54,11 @@ def _group_summary(data: pd.DataFrame, column: str, min_samples: int = 30) -> tu
 
 
 def _box(data: pd.DataFrame, column: str, title: str, order=None, height: int = 420) -> go.Figure:
+    """绘制某因素各类别的单价箱线图。
+
+    箱体展示四分位区间与中位数，须线展示分布范围；
+    order 用于固定类别顺序，points=False 避免大样本下散点过密。
+    """
     fig = px.box(
         data, x=column, y="unit_price", color=column,
         category_orders={column: order} if order else None,
@@ -54,6 +71,7 @@ def _box(data: pd.DataFrame, column: str, title: str, order=None, height: int = 
 
 
 def _fig_impact(impacts: pd.DataFrame) -> go.Figure:
+    """汇总各因素类别的溢价幅度，用统一坐标系横向对比。"""
     data = impacts.sort_values("相对整体溢价")
     data["维度"] = data["因素"] + " · " + data["类别"]
     fig = px.bar(
@@ -68,6 +86,10 @@ def _fig_impact(impacts: pd.DataFrame) -> go.Figure:
 
 
 def _fig_area_scatter(df: pd.DataFrame) -> go.Figure:
+    """绘制面积-单价散点图并叠加线性趋势线。
+
+    为控制渲染性能，最多随机抽样 5000 条（固定随机种子保证可复现）。
+    """
     sample = df.sample(min(5000, len(df)), random_state=42)
     fig = px.scatter(
         sample, x="square", y="unit_price", opacity=0.35,
@@ -86,10 +108,18 @@ def _fig_area_scatter(df: pd.DataFrame) -> go.Figure:
 
 
 def analyze(df: pd.DataFrame) -> dict:
-    """执行价格影响因素分析。"""
+    """执行价格影响因素分析。
+
+    Args:
+        df: 清洗后的房源数据。
+
+    Returns:
+        包含指标卡、箱线图/溢价对比图、分组统计表和文字结论的字典。
+    """
     data = _prepare(df)
     overall_median = data["unit_price"].median()
 
+    # 逐个因素计算分组统计和显著性 p 值，并统一列名为“因素/类别”
     summaries = {}
     p_values = {}
     for label, column in FACTORS.items():
@@ -107,6 +137,7 @@ def analyze(df: pd.DataFrame) -> dict:
     type_stats = summaries["建筑类型"].set_index("类别")["中位单价"]
     floor_stats = summaries["楼层"].set_index("类别")["中位单价"]
 
+    # 汇总样本量达标的类别，供溢价对比图使用
     impact_rows = []
     for label, stats in summaries.items():
         for _, row in stats[stats["房源数"] >= 30].iterrows():

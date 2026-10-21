@@ -178,6 +178,11 @@ footer {
 
 
 def _figure_html(fig, first: bool) -> str:
+    """将 Plotly 图表转为可嵌入的 HTML。
+
+    第一张图内嵌完整 plotly.js，后续图表复用该脚本，
+    使整个报告成为可离线打开的单文件。
+    """
     return pio.to_html(
         fig,
         full_html=False,
@@ -187,10 +192,12 @@ def _figure_html(fig, first: bool) -> str:
 
 
 def _table_html(df: pd.DataFrame) -> str:
+    """将 DataFrame 转为带样式的 HTML 表格。"""
     return df.to_html(index=False, classes="data-table", border=0, escape=True)
 
 
 def _metrics_html(metrics: list[dict]) -> str:
+    """渲染顶部指标卡网格（标签 + 数值 + 单位）。"""
     cards = []
     for item in metrics:
         unit = f'<span class="unit">{html.escape(item["unit"])}</span>' if item.get("unit") else ""
@@ -202,11 +209,13 @@ def _metrics_html(metrics: list[dict]) -> str:
 
 
 def _insights_html(insights: list[str]) -> str:
+    """渲染“关键发现”列表，所有文本做 HTML 转义防止注入。"""
     items = "".join(f"<li>{html.escape(text)}</li>" for text in insights)
     return f'<div class="card insights"><h3>关键发现</h3><ul>{items}</ul></div>'
 
 
 def _tables_html(tables: list[dict]) -> str:
+    """渲染分析模块附带的数据表区块。"""
     blocks = []
     for table in tables:
         blocks.append(
@@ -217,6 +226,10 @@ def _tables_html(tables: list[dict]) -> str:
 
 
 def _render_section(section_id: str, index: str, result: dict, first: list[bool]) -> str:
+    """渲染单个分析板块：标题、指标卡、结论、图表网格和数据表。
+
+    first 使用单元素列表以便在循环中记录是否已嵌入 plotly.js。
+    """
     figures = []
     for fig in result["figures"].values():
         html_fig = _figure_html(fig, first[0])
@@ -237,6 +250,7 @@ def _render_section(section_id: str, index: str, result: dict, first: list[bool]
 
 
 def _render_overview(clean_report: dict, total_rows: int) -> str:
+    """渲染数据概览板块，展示清洗漏斗和过滤比例。"""
     steps = clean_report["steps"]
     items = "".join(
         f'<div class="clean-item"><span>{html.escape(name)}</span><strong>{count:,}</strong></div>'

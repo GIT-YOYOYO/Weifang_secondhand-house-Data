@@ -1,4 +1,8 @@
-"""市场概况分析。"""
+"""市场概况分析。
+
+从整体价格水平、区县对比、总价与面积结构、装修和户型构成等角度
+刻画潍坊市二手房市场的整体面貌。
+"""
 
 import pandas as pd
 import plotly.express as px
@@ -10,6 +14,11 @@ from ..preprocessing import AREA_LABELS, PRICE_LABELS
 
 
 def _district_stats(df: pd.DataFrame) -> pd.DataFrame:
+    """按区县聚合市场指标。
+
+    中位数用于价格指标，避免高价豪宅等极端样本拉高均值；
+    结果按中位单价降序排列，用于后续排名与结论生成。
+    """
     stats = (
         df.groupby("district", as_index=False)
         .agg(
@@ -26,6 +35,7 @@ def _district_stats(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _fig_district_price(stats: pd.DataFrame) -> go.Figure:
+    """绘制区县中位单价横向条形图（升序排列，最高价在顶部）。"""
     data = stats.sort_values("中位单价")
     fig = px.bar(
         data, x="中位单价", y="district", orientation="h",
@@ -40,6 +50,7 @@ def _fig_district_price(stats: pd.DataFrame) -> go.Figure:
 
 
 def _fig_district_count(stats: pd.DataFrame) -> go.Figure:
+    """绘制各区县在售房源数量柱状图，反映市场供应分布。"""
     data = stats.sort_values("房源数", ascending=False)
     fig = px.bar(
         data, x="district", y="房源数",
@@ -53,6 +64,7 @@ def _fig_district_count(stats: pd.DataFrame) -> go.Figure:
 
 
 def _fig_price_hist(df: pd.DataFrame) -> go.Figure:
+    """绘制总价分布直方图，并用虚线标注中位数位置。"""
     median = df["total_price"].median()
     fig = px.histogram(df, x="total_price", nbins=50, color_discrete_sequence=["#2563EB"])
     fig.add_vline(
@@ -65,6 +77,7 @@ def _fig_price_hist(df: pd.DataFrame) -> go.Figure:
 
 
 def _fig_area_bin(df: pd.DataFrame) -> go.Figure:
+    """按预设面积段统计房源数量，保持 60㎡以下到 150㎡以上的固定顺序。"""
     counts = df["area_bin"].value_counts().reindex(AREA_LABELS).reset_index()
     counts.columns = ["面积段", "房源数"]
     fig = px.bar(counts, x="面积段", y="房源数", text="房源数", color="面积段")
@@ -76,6 +89,7 @@ def _fig_area_bin(df: pd.DataFrame) -> go.Figure:
 
 
 def _fig_decoration(df: pd.DataFrame) -> go.Figure:
+    """绘制装修情况构成环形图，展示精装/简装/毛坯/其他的占比。"""
     counts = df["decoration"].value_counts().reset_index()
     counts.columns = ["装修", "房源数"]
     fig = px.pie(
@@ -87,6 +101,7 @@ def _fig_decoration(df: pd.DataFrame) -> go.Figure:
 
 
 def _fig_layout(df: pd.DataFrame) -> go.Figure:
+    """绘制房源数量最多的 10 种户型（按“N室M厅”聚合）。"""
     counts = df["layout"].value_counts().head(10).reset_index()
     counts.columns = ["户型", "房源数"]
     fig = px.bar(
@@ -100,10 +115,19 @@ def _fig_layout(df: pd.DataFrame) -> go.Figure:
 
 
 def analyze(df: pd.DataFrame) -> dict:
-    """执行市场概况分析，返回指标、图表、表格与结论。"""
+    """执行市场概况分析。
+
+    Args:
+        df: 清洗后的房源数据。
+
+    Returns:
+        包含 title、metrics（指标卡）、figures（Plotly 图表）、
+        insights（文字结论）和 tables（数据表）的字典。
+    """
     stats = _district_stats(df)
     stats.to_csv(TABLE_DIR / "market_district_stats.csv", index=False, encoding="utf-8-sig")
 
+    # 计算总价段、面积段分布以及装修占比，用于生成结论
     price_bin_counts = df["price_bin"].value_counts().reindex(PRICE_LABELS)
     area_counts = df["area_bin"].value_counts().reindex(AREA_LABELS)
     decor_share = df["decoration"].value_counts(normalize=True).mul(100).round(1)
@@ -128,6 +152,7 @@ def analyze(df: pd.DataFrame) -> dict:
         "layout": _fig_layout(df),
     }
 
+    # 主力总价段/面积段：房源数量最多的区间及其占比
     main_price_bin = price_bin_counts.idxmax()
     main_price_share = price_bin_counts.max() / len(df) * 100
     main_area = area_counts.idxmax()

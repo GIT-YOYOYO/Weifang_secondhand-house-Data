@@ -1,4 +1,8 @@
-"""小区维度分析。"""
+"""小区维度分析。
+
+以小区为单位聚合房源，识别价格高地、供应大户以及与所在区县
+平均水平相比明显折价的小区。
+"""
 
 import pandas as pd
 import plotly.express as px
@@ -9,6 +13,11 @@ from ..config import MIN_COMMUNITY_SAMPLES, TABLE_DIR, TOP_N
 
 
 def _community_stats(df: pd.DataFrame) -> pd.DataFrame:
+    """按小区聚合价格、面积、装修占比等指标。
+
+    区县取该小区房源中出现次数最多的区县；折价率定义为
+    (区县中位单价 - 小区中位单价) / 区县中位单价，正值表示低于区县水平。
+    """
     grouped = (
         df.groupby("community", as_index=False)
         .agg(
@@ -20,6 +29,7 @@ def _community_stats(df: pd.DataFrame) -> pd.DataFrame:
             精装占比=("decoration", lambda s: (s == "精装").mean() * 100),
         )
     )
+    # 用所在区县的中位单价作为基准，计算小区相对折价率
     district_median = df.groupby("district")["unit_price"].median()
     grouped["区县中位单价"] = grouped["district"].map(district_median)
     grouped["相对区县折价率"] = (1 - grouped["中位单价"] / grouped["区县中位单价"]) * 100
@@ -27,6 +37,7 @@ def _community_stats(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _fig_top_price(qualified: pd.DataFrame) -> go.Figure:
+    """绘制中位单价最高的 N 个小区，颜色区分所属区县。"""
     data = qualified.nlargest(TOP_N, "中位单价").sort_values("中位单价")
     fig = px.bar(
         data, x="中位单价", y="community", orientation="h",
@@ -40,6 +51,7 @@ def _fig_top_price(qualified: pd.DataFrame) -> go.Figure:
 
 
 def _fig_top_supply(qualified: pd.DataFrame) -> go.Figure:
+    """绘制在售房源数量最多的 N 个小区。"""
     data = qualified.nlargest(TOP_N, "房源数").sort_values("房源数")
     fig = px.bar(
         data, x="房源数", y="community", orientation="h",
@@ -52,6 +64,10 @@ def _fig_top_supply(qualified: pd.DataFrame) -> go.Figure:
 
 
 def _fig_scatter(qualified: pd.DataFrame) -> go.Figure:
+    """绘制小区“房源规模-中位单价”气泡图。
+
+    气泡大小代表中位总价，横轴使用对数刻度以缓解少数超大社区的拉伸。
+    """
     fig = px.scatter(
         qualified, x="房源数", y="中位单价", size="中位总价",
         color="district", hover_name="community",
@@ -64,8 +80,19 @@ def _fig_scatter(qualified: pd.DataFrame) -> go.Figure:
 
 
 def analyze(df: pd.DataFrame) -> dict:
-    """执行小区维度分析。"""
+    """执行小区维度分析。
+
+    样本量低于 MIN_COMMUNITY_SAMPLES 的小区不参与排名，
+    避免个别挂牌造成中位价失真。
+
+    Args:
+        df: 清洗后的房源数据。
+
+    Returns:
+        包含指标卡、图表、结论与排行表的字典。
+    """
     grouped = _community_stats(df)
+    # 仅保留样本量达标的小区，保证排名稳定
     qualified = grouped[grouped["房源数"] >= MIN_COMMUNITY_SAMPLES].copy()
     qualified = qualified.sort_values("中位单价", ascending=False).reset_index(drop=True)
 
