@@ -103,7 +103,10 @@ def clean_data(raw: pd.DataFrame):
     df = raw.copy()
     steps = [("原始记录数", len(df))]
 
-    # 1. 核心数值字段转换
+    # 1. 核心数值字段转换与缺失剔除
+    #    挂牌数据中的价格、面积可能混入空串或非数值文本，先统一转为数值，
+    #    无法解析的值记为 NaN。这里只删除三个核心字段缺失的记录，
+    #    非核心字段的缺失留到分析或建模阶段处理，避免过度删除样本。
     for col in ["total_price", "unit_price", "square"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     before = len(df)
@@ -111,39 +114,58 @@ def clean_data(raw: pd.DataFrame):
     steps.append(("数值缺失剔除", before - len(df)))
 
     # 2. 同一房源重复挂牌去重
+    #    同一套房源可能被中介重复发布，其标题、小区、总价和面积通常一致。
+    #    用这四个字段组成业务主键去重，保留首次出现的记录；
+    #    只按标题去重会误删不同房源，只用 id 则识别不出重复挂牌。
     before = len(df)
     df = df.drop_duplicates(subset=["title", "community", "total_price", "square"])
     steps.append(("重复挂牌剔除", before - len(df)))
 
     # 3. 楼层解析
+    #    原始格式如“中楼层 (共11层)”，用正则提取楼层位置（低/中/高）
+    #    和总层数。格式不匹配时解析结果为 NaN，不在此处删除样本。
     floor_parts = df["floor"].astype(str).str.extract(FLOOR_RE)
     df["floor_level"] = floor_parts[0]
     df["total_floors"] = pd.to_numeric(floor_parts[1], errors="coerce")
 
-    # 4. 户型解析：SIZE_RE 的捕获组依次为 室、厅、厨、卫
+    # 4. 户型解析
+    #    原始格式如“3室2厅1厨1卫”。SIZE_RE 的捕获组依次为
+    #    室、厅、厨、卫（第 3 组“厨”本次不使用），因此 rooms/halls
+    #    分别取第 0、1 组，bathrooms 取第 3 组，避免列错位。
     size_parts = df["size"].astype(str).str.extract(SIZE_RE)
     df["rooms"] = pd.to_numeric(size_parts[0], errors="coerce")
     df["halls"] = pd.to_numeric(size_parts[1], errors="coerce")
     df["bathrooms"] = pd.to_numeric(size_parts[3], errors="coerce")
 
     # 5. 梯户比解析
+    #    原始格式如“一梯两户”“四梯三十五户”，先分别提取电梯数和每层户数，
+    #    再用 cn_to_int 将中文数字转为整数；户/梯由两者相除得到，
+    #    电梯数为 0 时置为缺失，避免除零。
     ladder_parts = df["elevatorNum"].astype(str).str.extract(LADDER_RE)
     df["elevators"] = ladder_parts[0].map(cn_to_int)
     df["households"] = ladder_parts[1].map(cn_to_int)
     df["households_per_elevator"] = df["households"] / df["elevators"].replace(0, pd.NA)
 
     # 6. 类别字段标准化
+    #    朝向组合较多，归并为南北通透/朝南/朝北/其他四类，便于分组统计；
+    #    电梯“有/无”转为 1/0；装修和建筑类型缺失统一填“其他”，
+    #    保证后续 groupby 和图表不会因空值丢失样本。
     df["direction_type"] = df["direction"].map(_direction_type)
     df["elevator_flag"] = df["elevator"].map({"有": 1, "无": 0})
     df["decoration"] = df["decoration"].fillna("其他")
     df["type"] = df["type"].fillna("其他")
 
-    # 7. 极端值过滤：分别对单价、面积、总价做分位数裁剪
+    # 7. 极端值过滤
+    #    对单价、面积、总价依次按 0.2%～99.8% 分位数裁剪，剔除明显录入
+    #    错误或异常挂牌，同时保留高价大平层等真实高端样本；每一步单独
+    #    记录删除行数，便于在报告中还原清洗漏斗。
     for col in ["unit_price", "square", "total_price"]:
         df, removed = _filter_quantile(df, col)
         steps.append((f"{col} 极端值剔除", removed))
 
-    # 8. 派生分组字段：面积段、总价段、统一格式的户型标签
+    # 8. 派生分组字段
+    #    按固定区间生成面积段和总价段，保证图表中的类别顺序稳定；
+    #    layout 统一为“N室M厅”，使用 Int64 避免出现“3.0室”的格式。
     df["area_bin"] = pd.cut(df["square"], bins=AREA_BINS, labels=AREA_LABELS, right=False)
     df["price_bin"] = pd.cut(df["total_price"], bins=PRICE_BINS, labels=PRICE_LABELS, right=False)
     df["layout"] = df["rooms"].astype("Int64").astype(str) + "室" + df["halls"].astype("Int64").astype(str) + "厅"
