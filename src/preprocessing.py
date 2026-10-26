@@ -120,10 +120,11 @@ def clean_data(raw: pd.DataFrame):
     df["floor_level"] = floor_parts[0]
     df["total_floors"] = pd.to_numeric(floor_parts[1], errors="coerce")
 
-    # 4. 户型解析
+    # 4. 户型解析：SIZE_RE 的捕获组依次为 室、厅、厨、卫
     size_parts = df["size"].astype(str).str.extract(SIZE_RE)
-    for idx, name in enumerate(["rooms", "halls", "bathrooms"], start=1):
-        df[name] = pd.to_numeric(size_parts[idx], errors="coerce")
+    df["rooms"] = pd.to_numeric(size_parts[0], errors="coerce")
+    df["halls"] = pd.to_numeric(size_parts[1], errors="coerce")
+    df["bathrooms"] = pd.to_numeric(size_parts[3], errors="coerce")
 
     # 5. 梯户比解析
     ladder_parts = df["elevatorNum"].astype(str).str.extract(LADDER_RE)

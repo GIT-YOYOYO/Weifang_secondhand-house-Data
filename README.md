@@ -18,26 +18,31 @@
 ```
 潍坊市二手房样本数据项目/
 ├── data/
-│   ├── sh_data.csv          # 原始二手房样本数据
-│   └── processed_data.csv   # 清洗后数据（运行后生成）
+│   ├── sh_data.csv          # 原始二手房样本数据（18,339 行 × 16 字段）
+│   └── processed_data.csv   # 清洗后数据（18,115 行 × 29 字段，运行后生成）
 ├── src/
+│   ├── __init__.py          # 包说明
 │   ├── config.py            # 路径与全局配置
-│   ├── data_loader.py       # 数据读取
+│   ├── data_loader.py       # 原始/清洗后数据读取
 │   ├── preprocessing.py     # 数据清洗与特征构造
 │   ├── charts.py            # Plotly 图表统一样式
 │   ├── report_charts.py     # Matplotlib 报告插图生成
-│   ├── report.py            # HTML 报告生成
+│   ├── report.py            # HTML 报告生成与单图导出
 │   ├── pipeline.py          # 分析流水线编排
 │   └── analysis/
+│       ├── __init__.py      # 分析模块说明
 │       ├── market.py        # 市场概况
 │       ├── community.py     # 小区维度
 │       ├── factors.py       # 价格影响因素
 │       └── modeling.py      # 建模与应用
 ├── output/
-│   ├── 潍坊市二手房市场分析报告.html  # 交互式分析报告
-│   ├── figures/             # 独立图表 HTML（中文文件名）
-│   ├── report_assets/       # 报告静态插图 JPG（Matplotlib）
-│   └── tables/              # 分析结果 CSV
+│   ├── 潍坊市二手房市场分析报告.html  # 交互式分析报告（单文件，可离线打开）
+│   ├── figures/             # 20 张独立图表 HTML（中文文件名）
+│   ├── report_assets/       # 12 张报告静态插图 JPG（Matplotlib）
+│   ├── screenshots/         # 5 张报告用运行与结果截图
+│   └── tables/              # 6 张分析结果 CSV
+├── 数据分析报告.docx        # 数据分析报告
+├── 数据质量分析报告.docx    # 数据质量分析报告
 ├── main.py                  # 项目入口
 ├── requirements.txt         # 依赖清单
 └── README.md
@@ -57,8 +62,10 @@ python main.py
 - `output/潍坊市二手房市场分析报告.html`：单文件交互式报告（已内嵌 Plotly，可离线打开）
 - `output/figures/*.html`：20 张独立图表，中文命名（如 `市场概况_区县中位单价.html`，Plotly 脚本通过 CDN 加载）
 - `output/report_assets/*.jpg`：12 张报告静态插图（7 张数据质量 + 5 张数据分析，Matplotlib 生成）
-- `output/tables/*.csv`：区县统计、小区排行、因素汇总、模型指标、低价候选等数据表
+- `output/screenshots/*.jpg`：5 张报告用运行与结果截图（命令行流水线、市场概况、小区维度、价格影响因素、建模与应用）
+- `output/tables/*.csv`：6 张分析结果表，包括区县统计、小区排行、因素汇总、特征重要性、模型指标和低价候选
 - `data/processed_data.csv`：清洗并构造特征后的建模数据
+- 根目录 2 份 `.docx`：数据分析报告、数据质量分析报告
 
 ## 数据字段
 
@@ -82,3 +89,5 @@ python main.py
 | elevator | 是否有电梯 |
 | elevatorNum | 梯户比（如 一梯三户） |
 | ownership | 产权类型 |
+
+清洗后新增 13 个派生字段（楼层位置、总楼层、户型结构、梯户比、朝向类型、电梯标记、面积段、总价段、户型标签等），`data/processed_data.csv` 共 29 个字段。
