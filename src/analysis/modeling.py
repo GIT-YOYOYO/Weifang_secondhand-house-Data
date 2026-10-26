@@ -64,14 +64,18 @@ def _build_pipeline(model) -> Pipeline:
     做独热编码（handle_unknown="ignore" 保证测试集出现新类别时不报错）。
     每个模型都使用独立的预处理分支，避免拟合状态相互影响。
     """
+    # 数值特征：中位数填补缺失后标准化，避免量纲影响线性模型
     numeric = Pipeline([
         ("imputer", SimpleImputer(strategy="median")),
         ("scaler", StandardScaler()),
     ])
+    # 类别特征：众数填补后独热编码；handle_unknown="ignore" 保证
+    # 测试集出现训练时未见过的类别时不会报错
     categorical = Pipeline([
         ("imputer", SimpleImputer(strategy="most_frequent")),
         ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
     ])
+    # 按列类型分别变换，再拼接为统一特征矩阵
     pre = ColumnTransformer([
         ("num", numeric, NUMERIC_FEATURES),
         ("cat", categorical, CATEGORICAL_FEATURES),
@@ -185,15 +189,24 @@ def analyze(df: pd.DataFrame) -> dict:
     Returns:
         包含指标卡、图表、评估表和低价候选表的字典。
     """
+    # 1. 准备特征与目标
+    #    只使用房源属性作为特征，不把总价放入特征，避免目标泄漏；
+    #    目标为元/㎡单价，便于不同面积房源之间横向比较
     features = df[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
     target = df["unit_price"]
 
-    # 同时切分特征、目标与原始索引，便于后续把预测结果映射回房源
+    # 2. 划分训练集与测试集
+    #    按 8:2 切分，同时保留原始索引 idx_test，便于把测试集预测结果
+    #    映射回标题、小区、区县等业务字段；固定随机种子保证划分可复现
+    #    （idx_train 当前不参与后续计算，保留用于可能的训练集诊断）
     x_train, x_test, y_train, y_test, idx_train, idx_test = train_test_split(
         features, target, df.index,
         test_size=0.2, random_state=RANDOM_STATE,
     )
 
+    # 3. 定义候选模型
+    #    随机森林：捕捉面积、区县、装修等特征之间的非线性关系和交互；
+    #    岭回归：带 L2 正则的线性基线，用于验证树模型是否真正带来提升
     algorithms = {
         "随机森林": RandomForestRegressor(
             n_estimators=300, min_samples_leaf=3, n_jobs=-1, random_state=RANDOM_STATE,
@@ -201,7 +214,10 @@ def analyze(df: pd.DataFrame) -> dict:
         "岭回归": Ridge(alpha=1.0),
     }
 
-    # 训练每个模型并在同一测试集上评估，保留预测结果与流水线供后续使用
+    # 4. 训练与评估
+    #    每个模型使用独立的 Pipeline，确保预处理只在训练集上拟合；
+    #    所有模型在同一测试集上计算指标，保证结果可横向比较
+    #    （R² 衡量解释方差比例，MAE 便于按元/㎡解释，RMSE 对大误差更敏感）
     results = {}
     predictions = {}
     for name, algorithm in algorithms.items():
@@ -221,13 +237,17 @@ def analyze(df: pd.DataFrame) -> dict:
          "RMSE": round(score["RMSE"], 1)}
         for name, score in results.items()
     ])
+    # 5. 汇总评估指标并落盘，供报告表格和 CSV 复用
     metrics.to_csv(TABLE_DIR / "model_metrics.csv", index=False, encoding="utf-8-sig")
 
+    # 6. 按测试集 R² 选择最佳模型，后续预测、特征重要性和低价候选均基于它
     best_name = metrics.sort_values("R²", ascending=False).iloc[0]["模型"]
     best_pipeline = results[best_name]["pipeline"]
     best_pred = predictions[best_name]
 
-    # 特征重要性（优先使用随机森林）
+    # 7. 特征重要性
+    #    使用随机森林的不纯度重要性，取 TOP12 并转为中文名称；
+    #    该指标表示特征在树分裂中的贡献，只作相对排序，不代表因果
     rf_pipeline = results["随机森林"]["pipeline"]
     feature_names = rf_pipeline.named_steps["pre"].get_feature_names_out()
     importance = pd.DataFrame({
@@ -236,14 +256,19 @@ def analyze(df: pd.DataFrame) -> dict:
     }).nlargest(12, "重要性")
     importance.to_csv(TABLE_DIR / "feature_importance.csv", index=False, encoding="utf-8-sig")
 
-    # 测试集预测明细与低价候选
+    # 8. 回查测试集房源并计算预测误差
+    #    通过 idx_test 把预测值映射回原始房源信息；
+    #    残差 = 实际单价 - 预测单价，正值表示模型低估，负值表示高估
     test = df.loc[idx_test, ["title", "community", "district", "square", "total_price", "unit_price"]].copy()
     test["预测单价"] = best_pred.round(1)
     test["残差"] = test["unit_price"] - test["预测单价"]
     # 折价率 = 1 - 挂牌价 / 预测价，正值表示挂牌价低于模型估值
     test["折价率"] = (1 - test["unit_price"] / test["预测单价"]) * 100
 
-    # 折价达到阈值的房源作为候选池，再取折价最大的若干条展示
+    # 9. 低价候选
+    #    折价达到阈值的房源作为候选池，再取折价最大的若干条展示；
+    #    只在测试集筛选，避免训练集过拟合导致折价被高估；
+    #    30% 阈值是偏保守的经验值，结果需线下核实
     bargain_pool = test[test["折价率"] >= BARGAIN_THRESHOLD]
     bargain_count = len(bargain_pool)
     bargains = bargain_pool.sort_values("折价率", ascending=False).head(BARGAIN_TOP_N).copy()
@@ -264,6 +289,7 @@ def analyze(df: pd.DataFrame) -> dict:
     })
     bargain_export.to_csv(TABLE_DIR / "bargain_candidates.csv", index=False, encoding="utf-8-sig")
 
+    # 10. 生成 5 张诊断图：模型对比、预测效果、特征重要性、残差分布、区域误差
     figures = {
         "model_compare": _fig_model_compare(metrics),
         "pred_scatter": _fig_pred_scatter(y_test.to_numpy(), best_pred, best_name),
@@ -272,6 +298,7 @@ def analyze(df: pd.DataFrame) -> dict:
         "district_error": _fig_district_error(test),
     }
 
+    # 11. 生成指标卡与文字结论，所有数字均由本次训练结果动态计算
     mae_ratio = results[best_name]["MAE"] / df["unit_price"].median() * 100
     top_features = "、".join(importance.head(3)["特征"].tolist())
 
@@ -294,6 +321,7 @@ def analyze(df: pd.DataFrame) -> dict:
         "实际交易前需线下核实。",
     ]
 
+    # 12. 按统一结构返回，供 pipeline 汇总和 report 渲染
     return {
         "title": "建模与应用",
         "metrics": metrics_cards,
